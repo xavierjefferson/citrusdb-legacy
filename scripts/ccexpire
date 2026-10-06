@@ -1,0 +1,74 @@
+#!/usr/bin/php
+<?php
+/*--------------------------------------------------------------------------*/
+//
+// send a reminder to customers the month their credit card expires
+// eg: on 2011-02-01 remind all users with 0211 expiration dates
+//
+/*---------------------------------------------------------------------------*/
+
+// Includes
+include('./include/config.inc.php');
+include('./include/database.inc.php');
+include('./include/billing.inc.php');
+include('./include/citrus_base.php');
+include('./include/support.inc.php');
+
+// calculate the expire date for this month
+$nextexpdate = date("my", mktime(0, 0, 0, date("m"), date("y")));
+
+// Select the customer info with matching card expiration dates
+$query = "SELECT b.id, b.contact_email, b.name, b.next_billing_date, bt.name bt_name, b.account_number, b.creditcard_number, b.creditcard_expire ".
+	"FROM billing b ".
+	"LEFT JOIN customer c on c.account_number = b.account_number ".
+	"LEFT JOIN billing_types bt ON bt.id = b.billing_type ".
+	"WHERE bt.method = 'creditcard' ".
+	"AND b.creditcard_expire = '$nextexpdate' ".
+	"AND c.cancel_date IS NULL";
+
+$DB->SetFetchMode(ADODB_FETCH_ASSOC);
+$result = $DB->Execute($query) or die ("3 week SELECT failed");
+
+while($myresult = $result->FetchRow())
+{
+	$billing_id = $myresult['id'];
+        $to = $myresult['contact_email'];
+	$name = $myresult['name'];
+	$next_billing_date = $myresult['next_billing_date'];
+	$next_billing_date = humandate($next_billing_date, $lang);
+	$billingtype = $myresult['bt_name'];
+	$account_number = $myresult['account_number'];
+	$creditcard_number = $myresult['creditcard_number'];
+	$creditcard_expire = $myresult['creditcard_expire'];
+
+	$subject = "Your credit card is about to expire";
+
+// fix any ascii characters in their name
+$name = html_to_ascii($name);
+
+	$message = "Account Number: $account_number\n\n".
+"$name,\n\n".
+"Thank you for choosing [company]. We would like to remind you that your ".
+"creditcard on file is about to expire at the end of this month.\n".
+"\n".
+"$creditcard_number, $creditcard_expire\n".
+"\n".
+"Please contact us with your new credit card expiration date so we may ".
+"continue providing service without any billing interruptions.\n\n".
+"If you have any questions, please call our offices at (XXX) XXX-XXXX";
+
+
+	echo "sending a expiration reminder to $to $account_number\n";	
+	$headers = "From: billing@example.com \n";
+	mail ($to, $subject, $message, $headers);
+
+// put a ticket to say that this message was sent
+$user = "system";
+$notify = "nobody";
+$status = "automatic";
+$description = "Sent card expiration reminder to $to";
+create_ticket($DB, $user, $notify, $account_number, $status, $description);
+
+}
+
+?>
